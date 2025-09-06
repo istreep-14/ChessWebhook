@@ -7,6 +7,34 @@ webhook_url = w.read()
 
 print('Running...') #Debug message on ready
 
+def parse_pgn(pgn_text):
+    tags = {}
+    if not pgn_text:
+        return tags, ''
+    lines = pgn_text.splitlines()
+    index = 0
+    while index < len(lines) and lines[index].strip().startswith('['):
+        line = lines[index].strip()
+        if line.startswith('[') and line.endswith(']'):
+            try:
+                inner = line[1:-1]
+                space_position = inner.find(' ')
+                if space_position != -1:
+                    tag = inner[:space_position]
+                    value_part = inner[space_position + 1:].strip()
+                    if value_part.startswith('"') and value_part.endswith('"'):
+                        value = value_part[1:-1]
+                    else:
+                        value = value_part.strip('"')
+                    tags[tag] = value
+            except Exception:
+                pass
+        index += 1
+    while index < len(lines) and lines[index].strip() == '':
+        index += 1
+    movetext = ' '.join(lines[index:]).strip()
+    return tags, movetext
+
 def loop():
     #Webhook
     webhook = DiscordWebhook(url=webhook_url)
@@ -109,6 +137,20 @@ def loop():
                     pass
                 #Endboard image adress
                 endboard = f'https://www.chess.com/dynboard?fen={fen}&board=brown&piece=neo&size=3'
+                # PGN details: rating, ECO, opening URL, movetext
+                pgn_text = response['games'][newest].get('pgn', '')
+                tags, movetext = parse_pgn(pgn_text)
+                eco = tags.get('ECO', 'Unknown')
+                opening_url = tags.get('ECOUrl') or tags.get('OpeningUrl') or 'Unknown'
+                if color == 'white':
+                    my_rating = tags.get('WhiteElo', 'Unknown')
+                elif color == 'black':
+                    my_rating = tags.get('BlackElo', 'Unknown')
+                else:
+                    my_rating = 'Unknown'
+                moves_field = movetext if movetext else 'Unavailable'
+                if len(moves_field) > 1000:
+                    moves_field = moves_field[:1000] + '…'
                 #Alert                
                 alert = DiscordEmbed(
                     title = f'{player} just played a game of chess!',
@@ -117,6 +159,10 @@ def loop():
                 )
                 alert.set_author(name='Chess Bot', icon_url='https://play-lh.googleusercontent.com/a7R5nyeaX8lIEWdBOxjlvbyq9LcFwh3XMvNtBPEKR3LPGgdvgGrec4sJwn8tUaaSkw')
                 alert.add_embed_field(name='Url', value=url)
+                alert.add_embed_field(name='My rating', value=my_rating)
+                alert.add_embed_field(name='ECO', value=eco)
+                alert.add_embed_field(name='Opening URL', value=opening_url)
+                alert.add_embed_field(name='Moves (PGN)', value=moves_field)
                 alert.set_image(url=endboard)
                 alert.set_footer(text='Made by AnanasHerz#5480')
                 webhook.add_embed(alert)
